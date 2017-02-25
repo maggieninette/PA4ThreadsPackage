@@ -37,7 +37,7 @@ void MyInitThreads ()
 
 	for (i = 0; i < MAXTHREADS; i++) {	// initialize thread table
 		thread[i].valid = 0;
-		char s[STACKSIZE]; 		// reserve stack space
+		//char s[STACKSIZE]; 		// reserve stack space
 	}
 
 	thread[0].valid = 1;			// initialize thread 0
@@ -64,7 +64,49 @@ int MyCreateThread (func, param)
 		Exit ();
 	}
 
-	if (setjmp (thread[0].env) == 0) {	// save context of thread 0
+	/* Get the currently running thread */
+	int T = MyGetThread();
+
+	//if (setjmp (thread[0].env) == 0) {	// save context of thread 0
+
+
+	/* looks for the next available spot in the thread table */
+
+	int created = 0;
+
+	for (int i = newlycreated+1; i < MAXTHREADS; i++) {
+		if (!thread[i].valid)	{
+			//we can place the newly created thread here
+			newlycreated = i;
+			created = 1;
+			thread[i].valid = 1;
+			break;
+		}
+	}
+	/* start again at the beginning if it reached the end of table */
+	if (created == 0) {
+		for (int i = 0; i < MAXTHREADS; i++) {
+		
+			if (!thread[i].valid)	{
+				//we can place the newly created thread here
+				newlycreated = i;
+				thread[i].valid = 1;   //mark the entry for the new thread valid
+				created = 1;
+			}
+		}
+	}
+/* If there is an error, such as if
+ * there are already MAXTHREADS active threads (and no more can be created
+ * until one or more exit), MyCreateThread should simply return -1.
+*/ 
+	if (created == 0) {
+		return (-1);
+	}
+
+
+
+	/* save the context of the current running thread */
+	if (setjmp (thread[T].env) == 0) {
 
 		/* The new thread will need stack space.  Here we use the
 		 * following trick: the new thread simply uses the current
@@ -77,35 +119,41 @@ int MyCreateThread (func, param)
 		 * removing it, it should be referenced.  
 		 */
 		
-		//looks for the next available spot in the thread table
-	/*	for (int i = newlycreated; i < MAXPROCS; i++) {
-		
-		}
-*/
+
 
 		char s[STACKSIZE];	// reserve space for thread 0's stack
 		void (*f)() = func;	// f saves func on top of stack
 		int p = param;		// p saves param on top of stack
 
+
+//??????? WHAT THIS DO ???? 
 		if (((int) &s[STACKSIZE-1]) - ((int) &s[0]) + 1 != STACKSIZE) {
 			Printf ("Stack space reservation failed\n");
 			Exit ();
-		}
-
+		} 
+/*
 		if (setjmp (thread[1].env) == 0) {	// save context of 1
 	
 			
 			longjmp (thread[0].env, 1);	// back to thread 0
 		}
+*/
+
+	 	/*  save the context of newly created thread */
+		if (setjmp (thread[newlycreated].env) == 0) {
+			longjmp (thread[T].env,1);	//back to current thread
+		}
+
 
 		/* here when thread 1 is scheduled for the first time */
 	       	(*f) (p);			// execute func (param)
 		MyExitThread ();		// thread 1 is done - exit
 	}
 
-	thread[1].valid = 1;	// mark the entry for the new thread valid
+	//thread[1].valid = 1;	// mark the entry for the new thread valid
 
-	return (1);		// done, return new thread ID
+
+	return (newlycreated);		// done, return new thread ID
 }
 
 /*	MyYieldThread (t) causes the running thread, call it T, to yield to
@@ -137,11 +185,21 @@ int MyYieldThread (t)
 /* a thread might yield to itself... */
 
 	//Get the calling thread
+
 	int T = MyGetThread();
+
         if (setjmp (thread[T].env) == 0) {
 		currentthread = t;
                 longjmp (thread[t].env, 1);
         }
+
+	//get the current calling thread that is yielding last
+	
+	T = MyGetThread();
+
+
+/* ID of the calling thread must be properly returned */
+	return (T);
 
 }
 
@@ -172,6 +230,9 @@ void MySchedThread ()
 		Printf ("SchedThread: Must call InitThreads first\n");
 		Exit ();
 	}
+
+	
+
 }
 
 /*	MyExitThread () causes the currently running thread to exit.  
