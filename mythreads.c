@@ -14,6 +14,10 @@ static struct thread {			// thread table
 	int valid;			// 1 if entry is valid, else 0
 	jmp_buf env;			// current context
 
+	int *starting_point;
+
+	void (*f)();			// function to be executed
+	int parameter;			// integer parameter
 } thread[MAXTHREADS];
 
 int currentthread;
@@ -37,7 +41,15 @@ void MyInitThreads ()
 
 	for (i = 0; i < MAXTHREADS; i++) {	// initialize thread table
 		thread[i].valid = 0;
-		//char s[STACKSIZE]; 		// reserve stack space
+		char s[i*STACKSIZE]; 		// reserve stack space for all threads in thread table
+	
+
+// not sure if we need this or not
+		if (((int) &s[STACKSIZE-1]) - ((int) &s[0]) + 1 != STACKSIZE) {
+			Printf ("Stack space reservation failed\n");
+			Exit ();
+		} 
+
 	}
 
 	thread[0].valid = 1;			// initialize thread 0
@@ -45,6 +57,13 @@ void MyInitThreads ()
 	newlycreated = 0;
 	MyInitThreadsCalled = 1;
 	
+	
+
+
+
+
+
+
 	
 
 }
@@ -121,16 +140,18 @@ int MyCreateThread (func, param)
 		
 
 
-		char s[STACKSIZE];	// reserve space for thread 0's stack
+//		char s[STACKSIZE];	// reserve space for thread 0's stack
 		void (*f)() = func;	// f saves func on top of stack
 		int p = param;		// p saves param on top of stack
 
 
-//??????? WHAT THIS DO ???? 
+//??????? WHAT THIS DO ????
+/* 
 		if (((int) &s[STACKSIZE-1]) - ((int) &s[0]) + 1 != STACKSIZE) {
 			Printf ("Stack space reservation failed\n");
 			Exit ();
 		} 
+*/
 /*
 		if (setjmp (thread[1].env) == 0) {	// save context of 1
 	
