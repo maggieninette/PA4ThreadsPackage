@@ -18,11 +18,12 @@ static struct thread {			// thread table
 
 	void (*f)();			// function to be executed
 	int parameter;			// integer parameter
+	int timestamp;
 } thread[MAXTHREADS];
 
 int currentthread;
 int newlycreated;
-
+int currenttime = 0;
 
 #define STACKSIZE	65536		// maximum size of thread stack
 
@@ -41,14 +42,21 @@ void MyInitThreads ()
 
 	for (i = 0; i < MAXTHREADS; i++) {	// initialize thread table
 		thread[i].valid = 0;
-		char s[i*STACKSIZE]; 		// reserve stack space for all threads in thread table
-	
+		char s[i*STACKSIZE]; 		// reserve stack space for all threads in thread table	
 
 // not sure if we need this or not
 		if (((int) &s[STACKSIZE-1]) - ((int) &s[0]) + 1 != STACKSIZE) {
 			Printf ("Stack space reservation failed\n");
 			Exit ();
 		} 
+
+		//save thread's env
+		if (setjmp (thread[i].env) != 0){
+
+	       		thread[i].f(thread[i].parameter);	// execute func (param)
+			MyExitThread ();		
+		}
+
 
 	}
 
@@ -60,11 +68,6 @@ void MyInitThreads ()
 	
 
 
-
-
-
-
-	
 
 }
 
@@ -125,7 +128,7 @@ int MyCreateThread (func, param)
 
 
 	/* save the context of the current running thread */
-	if (setjmp (thread[T].env) == 0) {
+//	if (setjmp (thread[T].env) == 0) {
 
 		/* The new thread will need stack space.  Here we use the
 		 * following trick: the new thread simply uses the current
@@ -141,9 +144,14 @@ int MyCreateThread (func, param)
 
 
 //		char s[STACKSIZE];	// reserve space for thread 0's stack
-		void (*f)() = func;	// f saves func on top of stack
-		int p = param;		// p saves param on top of stack
+		//void (*f)() = func;	// f saves func on top of stack
+		//int p = param;		// p saves param on top of stack
 
+		//save the function pointer and param fields
+		thread[newlycreated].f = func;
+		thread[newlycreated].parameter = param;
+		thread[newlycreated].timestamp = currenttime;
+		currenttime++;
 
 //??????? WHAT THIS DO ????
 /* 
@@ -160,16 +168,16 @@ int MyCreateThread (func, param)
 		}
 */
 
-	 	/*  save the context of newly created thread */
+	 	/*  save the context of newly created thread 
 		if (setjmp (thread[newlycreated].env) == 0) {
 			longjmp (thread[T].env,1);	//back to current thread
-		}
+		}*/
 
 
 		/* here when thread 1 is scheduled for the first time */
-	       	(*f) (p);			// execute func (param)
-		MyExitThread ();		// thread 1 is done - exit
-	}
+	//       	(*f) (p);			// execute func (param)
+	//	MyExitThread ();		// thread 1 is done - exit
+//	}
 
 	//thread[1].valid = 1;	// mark the entry for the new thread valid
 
@@ -210,6 +218,11 @@ int MyYieldThread (t)
 	int T = MyGetThread();
 
         if (setjmp (thread[T].env) == 0) {
+
+		// "placing the calling thread at the end of the queue (setting it as oldest time)
+		thread[T].timestamp = currenttime;
+		currenttime++;
+
 		currentthread = t;
                 longjmp (thread[t].env, 1);
         }
@@ -251,6 +264,39 @@ void MySchedThread ()
 		Printf ("SchedThread: Must call InitThreads first\n");
 		Exit ();
 	}
+
+	//implements FIFO so it selects the thread with the smallest timestamp
+	int min_time;
+	for (int i = 0; i < MAXTHREADS; i++) {
+		if (thread[i].valid) {
+			min_time = thread[i].timestamp;
+			break;
+		}		
+	}
+	int sched_next;
+	for (int i = 0; i < MAXTHREADS; i++) {
+		if (thread[i].valid) {
+			if (thread[i].timestamp != -1) {
+				if (thread[i].timestamp < min_time) {
+					sched_next = i;
+					break;		
+				}
+			}
+		}
+	}
+
+
+	//save the env of current thread
+	int T = MyGetThread();
+	
+	if (setjmp (thread[T].env) == 0) {
+		//remove this thread from the "queue" --> set timestamp to -1
+		thread[sched_next].timestamp = -1;
+		
+
+		longjmp (thread[sched_next].env,1);	
+	}
+
 
 	
 
