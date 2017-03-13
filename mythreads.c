@@ -3,7 +3,7 @@
  */
 
 #include <setjmp.h>
-
+#include <strings.h>
 #include "aux.h"
 #include "umix.h"
 #include "mythreads.h"
@@ -15,12 +15,12 @@ static struct thread {			// thread table
 	jmp_buf env;			// current context
 	jmp_buf back_up;
 
-	int used;
 	void (*f)();			// function to be executed
 	int parameter;			// integer parameter
 	int timestamp;
 } thread[MAXTHREADS];
 
+int previousthread;
 int currentthread;
 int newlycreated;
 int currenttime = 0;
@@ -42,22 +42,28 @@ void MyInitThreads ()
 
 	for (i = 0; i < MAXTHREADS; i++) {	// initialize thread table
 		thread[i].valid = 0;
-		thread[i].used = 0;
 		char s[i*STACKSIZE]; 		// reserve stack space for all threads in thread table	
 
 // not sure if we need this or not
-/*
+
 		if (((int) &s[STACKSIZE-1]) - ((int) &s[0]) + 1 != STACKSIZE) {
 			Printf ("Stack space reservation failed\n");
 			Exit ();
 		} 
+
+	
+/*
 */
-		//*thread[i].back_up = *thread[i].env;
 		if (setjmp (thread[i].env) != 0){
-			
-	       		thread[currentthread].f(thread[currentthread].parameter);	// execute func (param)
+			if (*thread[currentthread].f) {	       		
+			thread[currentthread].f(thread[currentthread].parameter);	// execute func (param)
 			MyExitThread ();		
+			}
 		}
+
+
+		memcpy(thread[i].back_up,thread[i].env,sizeof(jmp_buf));
+
 
 
 	}
@@ -70,7 +76,6 @@ void MyInitThreads ()
 	newlycreated = 0;
 	MyInitThreadsCalled = 1;
 	
-
 }
 
 /*	MyCreateThread (func, param) creates a new thread to execute
@@ -122,23 +127,17 @@ int MyCreateThread (func, param)
 		return (-1);
 	}
 	
-	//if thread id has been used before, need to memcpy the env
-	if (thread[newlycreated].used) {
-		memcpy (thread[newlycreated].env,thread[newlycreated].back_up,sizeof(jmp_buf));
 
-	}			
-
+	//resetting the env buffer here
+	memcpy (thread[newlycreated].env,thread[newlycreated].back_up,sizeof(jmp_buf));
 
 	//save the function pointer and param fields
 	thread[newlycreated].f = func;
 	thread[newlycreated].parameter = param;
 		
-	thread[newlycreated].used = 1;
 	thread[newlycreated].timestamp = currenttime;
 	currenttime++;
 
-//Printf ("debug: (mycreatethread) created thread %d, timestamp: %d\n",newlycreated, 
-//	thread[newlycreated].timestamp);
 	return (newlycreated);		// done, return new thread ID
 
 }
@@ -164,37 +163,32 @@ int MyYieldThread (t)
 		Printf ("YieldThread: %d is not a valid thread ID\n", t);
 		return (-1);
 	}
+
 	if (! thread[t].valid) {
 		Printf ("YieldThread: Thread %d does not exist\n", t);
 		return (-1);
 	}
 
-/* a thread might yield to itself... */
 
-	//Get the calling thread
-
-	int T = MyGetThread();
-
-        if (setjmp (thread[T].env) == 0) {
+	previousthread = MyGetThread();
+        if (setjmp (thread[MyGetThread()].env) == 0) {
 
 		// "placing the calling thread at the end of the queue (setting it as oldest time)
-		thread[T].timestamp = currenttime;
+		thread[MyGetThread()].timestamp = currenttime;
 		currenttime++;
 
 		//remove t from the queue by setting its timestamp to -1
 		currentthread = t;
 		thread[t].timestamp = -1;
-
                 longjmp (thread[t].env, 1);
         }
 
 	//get the current calling thread that is yielding last
 	
-	T = MyGetThread();
 
 
 /* ID of the calling thread must be properly returned */
-	return (T);
+	return (previousthread);
 
 }
 
@@ -235,42 +229,24 @@ void MySchedThread ()
 
        	int T = MyGetThread();
 
-Printf ("debug: (MySchedThread) thread %d just exited and now calling the MySchedThread\n",T); 
-	//first, gets the timestamp of the first valid thread
-/*	for (int i = 0; i < MAXTHREADS; i++) {
-		if (thread[i].valid && i != T) {
-			min_time = thread[i].timestamp;
-			break;
-		}		
-	}
-*/
 	int sched_next = -1;
 
 	
 	for (int i = 0; i < MAXTHREADS; i++) {
 		if (thread[i].valid) {
-		//	if (thread[i].timestamp != -1) {
-				if (thread[i].timestamp < min_time) {
-//Printf ("assigning sched_next to be %d, timestamp: %d\n",i,thread[i].timestamp);
-					sched_next = i;
-					min_time = thread[i].timestamp;
+			if (thread[i].timestamp < min_time) {
+				sched_next = i;
+				min_time = thread[i].timestamp;
 							
-				}
-		//	}
+			}
 		}
 	}
 
 
 
 	if (sched_next == -1) {
-Printf ("debug: (MySchedThread) couldn't find a thread to yield to\n");
 		Exit();
 	}	
-
-if (T == 9){
-Printf ("debug: (MySchedThread) yielding to thread %d, timestamp: %d\n",sched_next,
-	thread[sched_next].timestamp);
-}
 
 
 	MyYieldThread(sched_next);
@@ -290,9 +266,10 @@ void MyExitThread ()
 		Printf ("ExitThread: Must call InitThreads first\n");
 		Exit ();
 	}
-	//choose the next thread to run
-
 	thread[currentthread].valid = 0;
+	
+
+
 	MySchedThread();
 
 }
